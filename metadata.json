@@ -1,0 +1,5 @@
+{
+  "name": "ChromaCheck AI",
+  "description": "An intelligent color palette generator and code inspector. Generate themes with Gemini and instantly view Hex, RGB, HSL, and CMYK codes.",
+  "requestFramePermissions": []
+}
