@@ -1,11 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Wand2, Palette as PaletteIcon, Loader2, Sparkles, Languages } from 'lucide-react';
-import { ColorItem, GenerateStatus, Language } from './types';
+import { Wand2, Palette as PaletteIcon, Loader2, Sparkles, Languages, Settings } from 'lucide-react';
+import { ColorItem, GenerateStatus, Language, UserSettings, SettingsProfile } from './types';
 import { generatePalette } from './services/aiService';
 import { translations } from './utils/i18n';
 import ColorCard from './components/ColorCard';
 import CodeInspector from './components/CodeInspector';
 import Toast from './components/Toast';
+import SettingsModal from './components/SettingsModal';
+
+const DEFAULT_PROFILE: SettingsProfile = {
+  id: 'default',
+  name: 'Default (Gemini)',
+  provider: 'gemini',
+  apiKey: '',
+  model: 'gemini-2.5-flash',
+  baseUrl: ''
+};
 
 const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>('zh');
@@ -18,6 +28,67 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<GenerateStatus>('idle');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isGenerated, setIsGenerated] = useState(false);
+  
+  // Settings State - Now managing profiles
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [profiles, setProfiles] = useState<SettingsProfile[]>([DEFAULT_PROFILE]);
+  const [activeProfileId, setActiveProfileId] = useState<string>(DEFAULT_PROFILE.id);
+
+  // Computed active settings
+  const activeSettings = profiles.find(p => p.id === activeProfileId) || profiles[0];
+
+  // Load settings from localStorage
+  useEffect(() => {
+    const savedProfiles = localStorage.getItem('chroma_profiles');
+    const savedActiveId = localStorage.getItem('chroma_active_profile_id');
+
+    if (savedProfiles) {
+      try {
+        const parsedProfiles = JSON.parse(savedProfiles);
+        if (Array.isArray(parsedProfiles) && parsedProfiles.length > 0) {
+          setProfiles(parsedProfiles);
+          if (savedActiveId) {
+            setActiveProfileId(savedActiveId);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse profiles", e);
+      }
+    } else {
+      // BACKWARD COMPATIBILITY: Check for old single-settings format
+      const oldSettings = localStorage.getItem('chroma_settings');
+      if (oldSettings) {
+        try {
+          const parsedOld = JSON.parse(oldSettings);
+          const migratedProfile: SettingsProfile = {
+            ...parsedOld,
+            id: 'migrated-' + Date.now(),
+            name: 'My Saved Settings'
+          };
+          // Keep default, add migrated
+          const newProfiles = [DEFAULT_PROFILE, migratedProfile];
+          setProfiles(newProfiles);
+          setActiveProfileId(migratedProfile.id);
+          
+          // Save immediately to new format
+          localStorage.setItem('chroma_profiles', JSON.stringify(newProfiles));
+          localStorage.setItem('chroma_active_profile_id', migratedProfile.id);
+        } catch (e) {
+          console.error("Failed to migrate old settings", e);
+        }
+      }
+    }
+  }, []);
+
+  const handleSaveProfiles = (updatedProfiles: SettingsProfile[], newActiveId: string) => {
+    setProfiles(updatedProfiles);
+    setActiveProfileId(newActiveId);
+    
+    localStorage.setItem('chroma_profiles', JSON.stringify(updatedProfiles));
+    localStorage.setItem('chroma_active_profile_id', newActiveId);
+    
+    setToastMessage(t.save + ' ' + t.success); // Using simplified logic for message
+  };
 
   // Update sample palette when language changes if user hasn't generated anything yet
   useEffect(() => {
@@ -32,19 +103,20 @@ const App: React.FC = () => {
     
     setStatus('loading');
     try {
-      const newPalette = await generatePalette(prompt, language, colorCount);
+      // Pass the active profile settings to service
+      const newPalette = await generatePalette(prompt, language, colorCount, activeSettings);
       setPalette(newPalette);
       setIsGenerated(true);
       if (newPalette.length > 0) {
         setSelectedColor(newPalette[0]);
       }
       setStatus('success');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       setStatus('error');
-      setToastMessage(t.failedToGenerate);
+      setToastMessage(`${t.failedToGenerate} ${error.message || ''}`);
     }
-  }, [prompt, language, colorCount, t.failedToGenerate]);
+  }, [prompt, language, colorCount, activeSettings, t.failedToGenerate]);
 
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -71,8 +143,17 @@ const App: React.FC = () => {
             <PaletteIcon size={28} strokeWidth={2} />
             <h1 className="text-xl font-bold tracking-tight text-gray-900">{t.appTitle}<span className="text-blue-600">{t.tagline}</span></h1>
           </div>
-          <div className="flex items-center gap-4 text-sm font-medium text-gray-500">
+          <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
             <span className="hidden md:inline">{t.poweredBy}</span>
+            
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex items-center justify-center w-9 h-9 rounded-full hover:bg-gray-100 text-gray-600 transition-colors border border-gray-200"
+              title={t.settings}
+            >
+              <Settings size={18} />
+            </button>
+
             <button 
               onClick={toggleLanguage}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-gray-100 text-gray-700 transition-colors border border-gray-200"
@@ -119,6 +200,11 @@ const App: React.FC = () => {
                 </>
               )}
             </button>
+           </div>
+
+           {/* Current Model Indicator */}
+           <div className="mt-3 text-xs text-gray-400">
+              Model: {activeSettings.name} ({activeSettings.model})
            </div>
            
            {/* Color Count Slider */}
@@ -184,6 +270,15 @@ const App: React.FC = () => {
           onClose={() => setToastMessage(null)} 
         />
       )}
+
+      <SettingsModal 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSaveProfiles}
+        profiles={profiles}
+        activeProfileId={activeProfileId}
+        language={language}
+      />
     </div>
   );
 };
