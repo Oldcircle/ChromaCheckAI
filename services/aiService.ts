@@ -32,7 +32,6 @@ const generateGemini = async (prompt: string, langInstruction: string, count: nu
     config: {
       responseMimeType: "application/json",
       responseSchema: geminiSchema,
-      temperature: 0.7,
     },
   });
 
@@ -114,7 +113,6 @@ const generateOpenAICompatible = async (prompt: string, langInstruction: string,
         { role: "system", content: systemPrompt },
         { role: "user", content: `Generate a palette of ${count} colors for: "${prompt}"` }
       ],
-      temperature: 0.7,
       // Some providers support response_format: { type: "json_object" }, but not all.
       // We rely on prompt engineering for broader compatibility.
     })

@@ -31,7 +31,6 @@ export const generatePalette = async (prompt: string, language: Language = 'en')
       config: {
         responseMimeType: "application/json",
         responseSchema: paletteSchema,
-        temperature: 0.7, 
       },
     });
 
